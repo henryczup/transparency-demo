@@ -1,0 +1,25 @@
+# Recording Configuration
+recording:
+  duration_seconds: 10  # Duration of recording session
+  output_directory: "./recordings"  # Where to save recorded data
+  
+# Camera Configuration
+camera:
+  resolution: "1080p"  # Options: 1080p, 4k, 720p
+  fps: 30  # Frames per second
+  enable_depth: false  # Set to true to also record depth data
+  color_order: "BGR"  # BGR or RGB
+  
+# GPIO Configuration
+gpio:
+  ft232h_url: "ftdi://ftdi:232h/1"  # FT232H device URL
+  trigger_pin: 0  # GPIO pin number (C0-C7)
+  signal_high_duration: 0.1  # How long to keep signal HIGH in seconds
+  signal_mode: "pulse"  # "pulse" or "continuous" (continuous keeps signal HIGH for entire recording)
+  
+# Post-processing Configuration
+postprocessing:
+  extract_frames: true  # Extract individual frames
+  frame_format: "jpg"  # jpg or png
+  generate_metadata: true  # Generate CSV with frame timestamps
+  frame_extraction_step: 1  # Extract every Nth frame (1 = all frames)

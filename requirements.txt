@@ -1,0 +1,17 @@
+# OAK-D Camera
+depthai>=2.24.0
+opencv-python>=4.8.0
+
+# FT232H GPIO Control
+pyftdi>=0.54.0
+
+# Data handling and processing
+numpy>=1.24.0
+pandas>=2.0.0
+
+# Video processing
+moviepy>=1.0.3
+
+# Utilities
+python-dateutil>=2.8.2
+pyyaml>=6.0
