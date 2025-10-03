@@ -36,53 +36,55 @@ class SynchronizedRecorder:
         """Initialize OAK-D camera pipeline"""
         print("Setting up OAK-D camera...")
         
-        # Create pipeline
-        self.pipeline = dai.Pipeline()
+        # Connect to device first
+        try:
+            self.device = dai.Device()
+            print(f"✓ Connected to device: {self.device.getDeviceName()}")
+        except RuntimeError as e:
+            if "ALREADY_IN_USE" in str(e):
+                print("\n✗ Device is locked by another process.")
+                print("Run: python reset_camera.py")
+                raise
+            elif "No device found" in str(e) or "Cannot find device" in str(e):
+                print("\n✗ No OAK-D camera detected.")
+                print("Please check:")
+                print("  1. Camera is connected via USB")
+                print("  2. USB cable is working (try USB 3.0 port)")
+                print("  3. Camera LED is on")
+                raise
+            else:
+                raise
         
-        # Define source - color camera
-        cam_rgb = self.pipeline.create(dai.node.ColorCamera)
+        # Create pipeline with device
+        self.pipeline = dai.Pipeline(self.device)
         
-        # Set camera properties
+        # Use modern Camera node API
+        cam = self.pipeline.create(dai.node.Camera)
+        
+        # Build the camera with socket configuration
+        self.cam_node = cam.build(dai.CameraBoardSocket.CAM_A)
+        
+        # Configure output capability
+        cap = dai.ImgFrameCapability()
+        
+        # Set resolution
         resolution_map = {
-            "1080p": dai.ColorCameraProperties.SensorResolution.THE_1080_P,
-            "4k": dai.ColorCameraProperties.SensorResolution.THE_4_K,
-            "720p": dai.ColorCameraProperties.SensorResolution.THE_720_P,
+            "1080p": (1920, 1080),
+            "4k": (3840, 2160),
+            "720p": (1280, 720),
         }
-        
-        cam_rgb.setResolution(resolution_map.get(
+        width, height = resolution_map.get(
             self.config['camera']['resolution'], 
-            dai.ColorCameraProperties.SensorResolution.THE_1080_P
-        ))
-        cam_rgb.setFps(self.config['camera']['fps'])
+            (1920, 1080)
+        )
+        cap.size.fixed((width, height))
         
-        if self.config['camera']['color_order'] == 'RGB':
-            cam_rgb.setColorOrder(dai.ColorCameraProperties.ColorOrder.RGB)
-        else:
-            cam_rgb.setColorOrder(dai.ColorCameraProperties.ColorOrder.BGR)
+        # Set FPS
+        cap.fps.fixed(float(self.config['camera']['fps']))
         
-        # Create output
-        xout_video = self.pipeline.create(dai.node.XLinkOut)
-        xout_video.setStreamName("video")
-        cam_rgb.video.link(xout_video.input)
-        
-        # Optional: Add depth camera
-        if self.config['camera'].get('enable_depth', False):
-            mono_left = self.pipeline.create(dai.node.MonoCamera)
-            mono_right = self.pipeline.create(dai.node.MonoCamera)
-            stereo = self.pipeline.create(dai.node.StereoDepth)
-            
-            mono_left.setResolution(dai.MonoCameraProperties.SensorResolution.THE_400_P)
-            mono_left.setBoardSocket(dai.CameraBoardSocket.LEFT)
-            mono_right.setResolution(dai.MonoCameraProperties.SensorResolution.THE_400_P)
-            mono_right.setBoardSocket(dai.CameraBoardSocket.RIGHT)
-            
-            stereo.setDefaultProfilePreset(dai.node.StereoDepth.PresetMode.HIGH_DENSITY)
-            mono_left.out.link(stereo.left)
-            mono_right.out.link(stereo.right)
-            
-            xout_depth = self.pipeline.create(dai.node.XLinkOut)
-            xout_depth.setStreamName("depth")
-            stereo.depth.link(xout_depth.input)
+        # Request output with capability and create queue
+        # Second parameter is onHost (True = process on host, False = on device)
+        self.video_queue = self.cam_node.requestOutput(cap, True).createOutputQueue()
         
         print("Camera setup complete!")
         
@@ -91,6 +93,17 @@ class SynchronizedRecorder:
         print("Setting up FT232H GPIO...")
         
         try:
+            # Configure USB backend for Windows
+            try:
+                import usb.backend.libusb1
+                import libusb_package
+                # Set backend to use libusb-package
+                backend = usb.backend.libusb1.get_backend(find_library=libusb_package.find_library)
+                import os
+                os.environ['PYUSB_BACKEND'] = str(backend)
+            except ImportError:
+                pass  # Backend will use default
+            
             self.gpio = GpioAsyncController()
             self.gpio.configure(
                 self.config['gpio']['ft232h_url'],
@@ -139,16 +152,13 @@ class SynchronizedRecorder:
         
         print(f"\nSession directory: {self.session_dir}")
         
-        # Setup hardware
+        # Setup hardware (this now connects to device and creates pipeline)
         self.setup_camera()
         self.setup_gpio()
         
-        # Connect to device
-        print("\nConnecting to OAK-D device...")
-        self.device = dai.Device(self.pipeline)
-        
-        # Get video output queue
-        video_queue = self.device.getOutputQueue(name="video", maxSize=30, blocking=False)
+        # Start the pipeline
+        print("\nStarting camera pipeline...")
+        self.pipeline.start()
         
         duration = self.config['recording']['duration_seconds']
         print(f"\nStarting synchronized recording for {duration} seconds...")
@@ -170,14 +180,14 @@ class SynchronizedRecorder:
         
         # Recording loop
         frame_count = 0
-        while True:
+        while self.pipeline.isRunning():
             elapsed = time.time() - start_time
             
             if elapsed >= duration:
                 break
             
             # Get frame from camera
-            video_frame = video_queue.tryGet()
+            video_frame = self.video_queue.tryGet()
             
             if video_frame is not None:
                 frame = video_frame.getCvFrame()
@@ -223,12 +233,12 @@ class SynchronizedRecorder:
             print("No frames to save")
             return
         
-        video_path = self.session_dir / "recording.avi"
+        video_path = self.session_dir / "recording.mp4"
         
         height, width = self.frames[0].shape[:2]
         fps = self.config['camera']['fps']
         
-        fourcc = cv2.VideoWriter_fourcc(*'XVID')
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
         out = cv2.VideoWriter(str(video_path), fourcc, fps, (width, height))
         
         for frame in self.frames:
