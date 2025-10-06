@@ -172,21 +172,77 @@ class SynchronizedRecorder:
         # If continuous, leave HIGH until recording stops
     
     def record(self):
-        """Main recording function with synchronized start"""
-        # Create session directory with timestamp
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.session_dir = self.output_dir / f"session_{timestamp}"
-        self.session_dir.mkdir(parents=True, exist_ok=True)
-        
-        print(f"\nSession directory: {self.session_dir}")
-        
-        # Setup hardware (this now connects to device and creates pipeline)
+        """Main recording function with synchronized start - supports multiple sessions"""
+        # Setup hardware once for all sessions
         self.setup_camera()
         self.setup_gpio()
         
         # Start the pipeline
         print("\nStarting camera pipeline...")
         self.pipeline.start()
+        
+        # Startup wait period (camera warmup, GPIO off)
+        startup_wait = self.config['recording'].get('startup_wait_seconds', 0)
+        if startup_wait > 0:
+            print(f"\n⏱  Startup wait period: {startup_wait} seconds")
+            print("   Camera warming up, GPIO pins OFF...")
+            for remaining in range(startup_wait, 0, -1):
+                print(f"   {remaining} seconds remaining...", end='\r')
+                time.sleep(1)
+            print("\n✓ Startup wait complete")
+        
+        # Get session configuration
+        num_sessions = self.config['recording'].get('num_sessions', 1)
+        interval_seconds = self.config['recording'].get('interval_seconds', 20)
+        
+        print(f"\n📹 Recording plan: {num_sessions} session(s)")
+        if num_sessions > 1:
+            print(f"   Recording duration: {self.config['recording']['duration_seconds']}s")
+            print(f"   Interval between sessions: {interval_seconds}s (GPIO OFF)")
+        
+        all_session_dirs = []
+        
+        # Perform multiple recording sessions
+        for session_num in range(1, num_sessions + 1):
+            print("\n" + "=" * 60)
+            print(f"SESSION {session_num} of {num_sessions}")
+            print("=" * 60)
+            
+            session_dir = self._record_single_session(session_num)
+            all_session_dirs.append(session_dir)
+            
+            # Wait between sessions (except after last one)
+            if session_num < num_sessions:
+                print(f"\n⏸  Interval period: {interval_seconds} seconds (GPIO OFF)")
+                for remaining in range(interval_seconds, 0, -1):
+                    print(f"   Next recording in {remaining} seconds...", end='\r')
+                    time.sleep(1)
+                print("\n")
+        
+        # Cleanup after all sessions
+        self._cleanup()
+        
+        print("\n" + "=" * 60)
+        print("ALL SESSIONS COMPLETE")
+        print("=" * 60)
+        print(f"Total sessions recorded: {len(all_session_dirs)}")
+        for i, dir in enumerate(all_session_dirs, 1):
+            print(f"  Session {i}: {dir}")
+        
+        return all_session_dirs
+    
+    def _record_single_session(self, session_num):
+        """Record a single session"""
+        # Create session directory with timestamp
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        session_dir = self.output_dir / f"session_{timestamp}"
+        session_dir.mkdir(parents=True, exist_ok=True)
+        
+        print(f"Session directory: {session_dir}")
+        
+        # Reset frame storage for this session
+        self.frames = []
+        self.timestamps = []
         
         duration = self.config['recording']['duration_seconds']
         print(f"\nStarting synchronized recording for {duration} seconds...")
@@ -244,36 +300,40 @@ class SynchronizedRecorder:
             print("GPIO signal turned OFF")
         
         gpio_thread.join()
-        cv2.destroyAllWindows()
         
         # Save video
         print(f"\nRecorded {frame_count} frames")
-        self._save_video()
-        self._save_metadata(start_time, end_time)
+        self._save_video(session_dir)
+        self._save_metadata(session_dir, start_time, end_time)
         
-        # Cleanup - ensure GPIO is OFF before closing
+        print(f"Session saved to: {session_dir}")
+        return str(session_dir)
+    
+    def _cleanup(self):
+        """Cleanup hardware after all sessions complete"""
+        
+        cv2.destroyAllWindows()
+        
+        # Ensure GPIO is OFF before closing
         if self.gpio:
-            print("\nCleaning up GPIO...")
+            print("Turning off GPIO...")
             if self.gpio_mode == 'adbus':
                 self.gpio.write_data(bytes([0x00]))  # Ensure D pins are LOW
-                # Note: Pin will go HIGH after device closes due to hardware pull-up
-                # To keep LOW, add 10kΩ pull-down resistor from D0 to GND
             else:
                 self.gpio.write(0x00)  # Ensure C pins are LOW
             print("✓ GPIO pins set to LOW")
             print("⚠ Note: Pin may go HIGH after program exits (hardware pull-up)")
             self.gpio.close()
         
-        print(f"\nRecording saved to: {self.session_dir}")
-        return str(self.session_dir)
+        print("✓ Cleanup complete")
     
-    def _save_video(self):
+    def _save_video(self, session_dir):
         """Save recorded frames as video file"""
         if not self.frames:
             print("No frames to save")
             return
         
-        video_path = self.session_dir / "recording.mp4"
+        video_path = Path(session_dir) / "recording.mp4"
         
         height, width = self.frames[0].shape[:2]
         fps = self.config['camera']['fps']
@@ -287,7 +347,7 @@ class SynchronizedRecorder:
         out.release()
         print(f"Video saved: {video_path}")
     
-    def _save_metadata(self, start_time, end_time):
+    def _save_metadata(self, session_dir, start_time, end_time):
         """Save session metadata including synchronization info"""
         metadata = {
             "session_info": {
@@ -306,7 +366,7 @@ class SynchronizedRecorder:
             "frame_timestamps": [ts - start_time for ts in self.timestamps]  # Relative timestamps
         }
         
-        metadata_path = self.session_dir / "metadata.json"
+        metadata_path = Path(session_dir) / "metadata.json"
         with open(metadata_path, 'w') as f:
             json.dump(metadata, f, indent=2)
         

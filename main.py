@@ -63,15 +63,30 @@ def main():
         
         # Record
         recorder = SynchronizedRecorder(config)
-        session_dir = recorder.record()
+        session_dirs = recorder.record()
         
         # Post-process if not disabled
         if not args.record_only:
-            processor = DataPostProcessor(session_dir, config)
-            processor.process_all()
+            print("\n" + "=" * 60)
+            print("STARTING POST-PROCESSING")
+            print("=" * 60)
+            
+            # Handle both single session (string) and multiple sessions (list)
+            if isinstance(session_dirs, str):
+                session_dirs = [session_dirs]
+            
+            for i, session_dir in enumerate(session_dirs, 1):
+                print(f"\nPost-processing session {i} of {len(session_dirs)}...")
+                processor = DataPostProcessor(session_dir, config)
+                processor.process_all()
         else:
             print("\nSkipping post-processing (--record-only flag set)")
-            print(f"To process later, run: python main.py --process-only {session_dir}")
+            if isinstance(session_dirs, list):
+                print("To process later, run:")
+                for session_dir in session_dirs:
+                    print(f"  python main.py --process-only {session_dir}")
+            else:
+                print(f"To process later, run: python main.py --process-only {session_dirs}")
     
     print("\n✓ All operations complete!")
 

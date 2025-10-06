@@ -1,26 +1,65 @@
-# Recording Configuration
-recording:
-  duration_seconds: 10  # Duration of recording session
-  output_directory: "./recordings"  # Where to save recorded data
+# # Recording Configuration
+# recording:
+#   duration_seconds: 10  # Duration of each recording session
+#   output_directory: "./recordings"  # Where to save recorded data
   
+#   # Multi-session configuration
+#   num_sessions: 1  # Number of recording sessions to perform (1 = single recording)
+#   interval_seconds: 20  # Time between sessions (GPIO OFF period)
+#   startup_wait_seconds: 5  # Wait time before first recording starts (camera warmup)
+  
+# # Camera Configuration
+# camera:
+#   resolution: "1080p"  # Options: 1080p, 4k, 720p
+#   fps: 30  # Frames per second
+#   enable_depth: false  # Set to true to also record depth data
+#   color_order: "BGR"  # BGR or RGB
+  
+# # GPIO Configuration
+# gpio:
+#   ft232h_url: "ftdi://ftdi:232h/1"  # FT232H device URL
+#   trigger_pin: 0  # GPIO pin number (D0-D7, outputs 3.3V)
+#   signal_high_duration: 0.1  # How long to keep signal HIGH in seconds
+#   signal_mode: "continuous"  # "pulse" or "continuous" (continuous keeps signal HIGH for entire recording)
+#   use_adbus: true  # Use D pins (ADBUS) for 3.3V output instead of C pins (ACBUS)
+  
+# # Post-processing Configuration
+# postprocessing:
+#   extract_frames: true  # Extract individual frames
+#   frame_format: "jpg"  # jpg or png
+#   generate_metadata: true  # Generate CSV with frame timestamps
+#   frame_extraction_step: 1  # Extract every Nth frame (1 = all frames)
+
+# Multi-Session Recording Configuration Example
+# This config runs multiple recording sessions with intervals between them
+
+recording:
+  duration_seconds: 10  # Each recording lasts 10 seconds (GPIO ON)
+  output_directory: "./recordings"
+  
+  # Multi-session settings
+  num_sessions: 5  # Perform 5 recording sessions
+  interval_seconds: 20  # Wait 20 seconds between sessions (GPIO OFF)
+  startup_wait_seconds: 60  # Wait 5 seconds before first recording (camera warmup)
+
 # Camera Configuration
 camera:
   resolution: "1080p"  # Options: 1080p, 4k, 720p
   fps: 30  # Frames per second
-  enable_depth: false  # Set to true to also record depth data
-  color_order: "BGR"  # BGR or RGB
-  
+  enable_depth: false
+  color_order: "BGR"
+
 # GPIO Configuration
 gpio:
-  ft232h_url: "ftdi://ftdi:232h/1"  # FT232H device URL
-  trigger_pin: 0  # GPIO pin number (D0-D7, outputs 3.3V)
-  signal_high_duration: 0.1  # How long to keep signal HIGH in seconds
-  signal_mode: "continuous"  # "pulse" or "continuous" (continuous keeps signal HIGH for entire recording)
-  use_adbus: true  # Use D pins (ADBUS) for 3.3V output instead of C pins (ACBUS)
-  
+  ft232h_url: "ftdi://ftdi:232h/1"
+  trigger_pin: 0  # D0 pin
+  signal_high_duration: 0.1
+  signal_mode: "continuous"  # GPIO HIGH during recording, LOW during intervals
+  use_adbus: true  # Use D pins for 3.3V output
+
 # Post-processing Configuration
 postprocessing:
-  extract_frames: true  # Extract individual frames
-  frame_format: "jpg"  # jpg or png
-  generate_metadata: true  # Generate CSV with frame timestamps
-  frame_extraction_step: 1  # Extract every Nth frame (1 = all frames)
+  extract_frames: true
+  frame_format: "jpg"
+  generate_metadata: true
+  frame_extraction_step: 1
