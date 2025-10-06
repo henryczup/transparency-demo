@@ -104,20 +104,34 @@ class SynchronizedRecorder:
             except ImportError:
                 pass  # Backend will use default
             
-            self.gpio = GpioAsyncController()
-            self.gpio.configure(
-                self.config['gpio']['ft232h_url'],
-                direction=0xFF  # All pins as output
-            )
+            # Check if we should use ADBUS (D pins, 3.3V) or ACBUS (C pins, 2.4V)
+            use_adbus = self.config['gpio'].get('use_adbus', False)
             
-            # Set all pins low initially
-            self.gpio.write(0x00)
-            print("FT232H GPIO setup complete!")
+            if use_adbus:
+                # Use ADBUS (D pins) for proper 3.3V output
+                from pyftdi.ftdi import Ftdi
+                self.gpio = Ftdi()
+                self.gpio.open_from_url(self.config['gpio']['ft232h_url'])
+                self.gpio.set_bitmode(0xFF, Ftdi.BitMode.BITBANG)
+                self.gpio.write_data(bytes([0x00]))
+                self.gpio_mode = 'adbus'
+                print("FT232H GPIO setup complete (ADBUS/D-pins, 3.3V)!")
+            else:
+                # Use ACBUS (C pins) - may output lower voltage
+                self.gpio = GpioAsyncController()
+                self.gpio.configure(
+                    self.config['gpio']['ft232h_url'],
+                    direction=0xFF  # All pins as output
+                )
+                self.gpio.write(0x00)
+                self.gpio_mode = 'acbus'
+                print("FT232H GPIO setup complete (ACBUS/C-pins)!")
             
         except Exception as e:
             print(f"Warning: Could not initialize FT232H: {e}")
             print("Continuing without GPIO control...")
             self.gpio = None
+            self.gpio_mode = None
     
     def trigger_gpio(self):
         """Send trigger signal via GPIO"""
@@ -131,15 +145,28 @@ class SynchronizedRecorder:
         # Record exact trigger time
         self.gpio_trigger_time = time.time()
         
-        # Set pin HIGH
-        self.gpio.write(1 << pin)
-        print(f"GPIO trigger sent on pin C{pin} at t={self.gpio_trigger_time:.6f}")
+        # Set pin HIGH (different methods for ADBUS vs ACBUS)
+        pin_label = "D" if self.gpio_mode == 'adbus' else "C"
+        
+        if self.gpio_mode == 'adbus':
+            # ADBUS mode: use write_data with byte array
+            self.gpio.write_data(bytes([1 << pin]))
+        else:
+            # ACBUS mode: use write with integer
+            self.gpio.write(1 << pin)
+        
+        print(f"GPIO trigger sent on pin {pin_label}{pin} at t={self.gpio_trigger_time:.6f}")
         
         if signal_mode == "pulse":
             # Short pulse mode
             duration = self.config['gpio']['signal_high_duration']
             time.sleep(duration)
-            self.gpio.write(0x00)
+            
+            if self.gpio_mode == 'adbus':
+                self.gpio.write_data(bytes([0x00]))
+            else:
+                self.gpio.write(0x00)
+            
             print(f"GPIO pulse completed ({duration}s)")
         # If continuous, leave HIGH until recording stops
     
@@ -209,7 +236,10 @@ class SynchronizedRecorder:
         
         # Turn off GPIO if in continuous mode
         if self.gpio and self.config['gpio']['signal_mode'] == "continuous":
-            self.gpio.write(0x00)
+            if self.gpio_mode == 'adbus':
+                self.gpio.write_data(bytes([0x00]))
+            else:
+                self.gpio.write(0x00)
             print("GPIO signal turned OFF")
         
         gpio_thread.join()

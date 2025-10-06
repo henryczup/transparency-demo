@@ -13,9 +13,10 @@ camera:
 # GPIO Configuration
 gpio:
   ft232h_url: "ftdi://ftdi:232h/1"  # FT232H device URL
-  trigger_pin: 0  # GPIO pin number (C0-C7)
+  trigger_pin: 0  # GPIO pin number (D0-D7, outputs 3.3V)
   signal_high_duration: 0.1  # How long to keep signal HIGH in seconds
-  signal_mode: "pulse"  # "pulse" or "continuous" (continuous keeps signal HIGH for entire recording)
+  signal_mode: "continuous"  # "pulse" or "continuous" (continuous keeps signal HIGH for entire recording)
+  use_adbus: true  # Use D pins (ADBUS) for 3.3V output instead of C pins (ACBUS)
   
 # Post-processing Configuration
 postprocessing:
