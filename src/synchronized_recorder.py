@@ -31,6 +31,7 @@ class SynchronizedRecorder:
         self.pipeline = None
         self.device = None
         self.gpio = None
+        self.gpio_mode = None
         
     def setup_camera(self):
         """Initialize OAK-D camera pipeline"""
@@ -250,8 +251,17 @@ class SynchronizedRecorder:
         self._save_video()
         self._save_metadata(start_time, end_time)
         
-        # Cleanup
+        # Cleanup - ensure GPIO is OFF before closing
         if self.gpio:
+            print("\nCleaning up GPIO...")
+            if self.gpio_mode == 'adbus':
+                self.gpio.write_data(bytes([0x00]))  # Ensure D pins are LOW
+                # Note: Pin will go HIGH after device closes due to hardware pull-up
+                # To keep LOW, add 10kΩ pull-down resistor from D0 to GND
+            else:
+                self.gpio.write(0x00)  # Ensure C pins are LOW
+            print("✓ GPIO pins set to LOW")
+            print("⚠ Note: Pin may go HIGH after program exits (hardware pull-up)")
             self.gpio.close()
         
         print(f"\nRecording saved to: {self.session_dir}")

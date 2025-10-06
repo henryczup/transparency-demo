@@ -55,7 +55,10 @@ def main():
         print(f"Configuration loaded from: {args.config}")
         print(f"Recording duration: {config['recording']['duration_seconds']} seconds")
         print(f"Camera: {config['camera']['resolution']} @ {config['camera']['fps']} FPS")
-        print(f"GPIO: Pin C{config['gpio']['trigger_pin']} ({config['gpio']['signal_mode']} mode)")
+        
+        # Determine pin label based on mode
+        pin_label = "D" if config['gpio'].get('use_adbus', False) else "C"
+        print(f"GPIO: Pin {pin_label}{config['gpio']['trigger_pin']} ({config['gpio']['signal_mode']} mode)")
         print("=" * 60)
         
         # Record
