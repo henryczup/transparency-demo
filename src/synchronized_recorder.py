@@ -85,7 +85,7 @@ class SynchronizedRecorder:
         
         # Request output with capability and create queue
         # Second parameter is onHost (True = process on host, False = on device)
-        self.video_queue = self.cam_node.requestOutput(cap, True).createOutputQueue()
+        self.video_queue = self.cam_node.requestFullResolutionOutput(useHighestResolution=True).createOutputQueue()
         
         print("Camera setup complete!")
         
@@ -173,6 +173,13 @@ class SynchronizedRecorder:
     
     def record(self):
         """Main recording function with synchronized start - supports multiple sessions"""
+        # Create parent run directory with timestamp
+        run_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.run_dir = self.output_dir / f"run_{run_timestamp}"
+        self.run_dir.mkdir(parents=True, exist_ok=True)
+        
+        print(f"\n📁 Run directory: {self.run_dir}")
+        
         # Setup hardware once for all sessions
         self.setup_camera()
         self.setup_gpio()
@@ -225,20 +232,25 @@ class SynchronizedRecorder:
         print("\n" + "=" * 60)
         print("ALL SESSIONS COMPLETE")
         print("=" * 60)
+        print(f"📁 Run directory: {self.run_dir}")
         print(f"Total sessions recorded: {len(all_session_dirs)}")
         for i, dir in enumerate(all_session_dirs, 1):
-            print(f"  Session {i}: {dir}")
+            # Show relative path from run directory
+            rel_path = Path(dir).relative_to(self.run_dir)
+            print(f"  Session {i}: {rel_path}")
         
         return all_session_dirs
     
     def _record_single_session(self, session_num):
         """Record a single session"""
-        # Create session directory with timestamp
+        # Create session directory inside run directory
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        session_dir = self.output_dir / f"session_{timestamp}"
+        session_dir = self.run_dir / f"session_{session_num:02d}_{timestamp}"
         session_dir.mkdir(parents=True, exist_ok=True)
         
-        print(f"Session directory: {session_dir}")
+        # Show relative path
+        rel_path = session_dir.relative_to(self.run_dir)
+        print(f"Session directory: {rel_path}")
         
         # Reset frame storage for this session
         self.frames = []
@@ -281,11 +293,6 @@ class SynchronizedRecorder:
                 self.timestamps.append(timestamp)
                 frame_count += 1
                 
-                # Optional: Display frame
-                cv2.imshow("Recording", frame)
-                if cv2.waitKey(1) == ord('q'):
-                    print("\nRecording interrupted by user")
-                    break
         
         # Stop recording
         print("\n=== RECORDING STOPPED ===")

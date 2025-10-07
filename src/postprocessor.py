@@ -31,7 +31,7 @@ class DataPostProcessor:
             print("Frame extraction disabled in config")
             return
         
-        video_path = self.session_dir / "recording.avi"
+        video_path = self.session_dir / "recording.mp4"
         if not video_path.exists():
             print(f"Video file not found: {video_path}")
             return

@@ -40,7 +40,7 @@ recording:
   # Multi-session settings
   num_sessions: 5  # Perform 5 recording sessions
   interval_seconds: 20  # Wait 20 seconds between sessions (GPIO OFF)
-  startup_wait_seconds: 60  # Wait 5 seconds before first recording (camera warmup)
+  startup_wait_seconds: 0  # Wait 5 seconds before first recording (camera warmup)
 
 # Camera Configuration
 camera:
