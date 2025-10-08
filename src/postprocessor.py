@@ -7,6 +7,7 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 import shutil
+from .transparency_analyzer import TransparencyAnalyzer
 
 
 class DataPostProcessor:
@@ -192,6 +193,21 @@ class DataPostProcessor:
         
         print(f"Summary report saved: {report_path}")
     
+    def run_transparency_analysis(self):
+        """Run transparency analysis if enabled"""
+        if not self.config.get('transparency_analysis', {}).get('enabled', False):
+            print("\nTransparency analysis disabled in config")
+            return
+        
+        # Determine run directory (parent of session directory)
+        run_dir = self.session_dir.parent if self.session_dir.parent.name.startswith('run_') else None
+        
+        # Create analyzer with run_dir for shared ROI
+        analyzer = TransparencyAnalyzer(self.session_dir, self.config, self.metadata, run_dir)
+        
+        # Run full analysis
+        analyzer.run_full_analysis()
+    
     def process_all(self):
         """Run all post-processing steps"""
         print("\n" + "=" * 60)
@@ -202,6 +218,7 @@ class DataPostProcessor:
         self.generate_frame_metadata()
         self.analyze_synchronization()
         self.create_summary_report()
+        self.run_transparency_analysis()
         
         print("\n" + "=" * 60)
         print("POST-PROCESSING COMPLETE")

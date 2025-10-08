@@ -6,6 +6,7 @@ import argparse
 from pathlib import Path
 from src.synchronized_recorder import SynchronizedRecorder
 from src.postprocessor import DataPostProcessor
+from src.run_analyzer import RunAnalyzer
 
 
 def load_config(config_path="config.yaml"):
@@ -79,6 +80,18 @@ def main():
                 print(f"\nPost-processing session {i} of {len(session_dirs)}...")
                 processor = DataPostProcessor(session_dir, config)
                 processor.process_all()
+            
+            # Run-level analysis if multiple sessions
+            if len(session_dirs) > 1:
+                # Get run directory from first session
+                run_dir = Path(session_dirs[0]).parent
+                
+                print("\n" + "=" * 60)
+                print("STARTING RUN-LEVEL ANALYSIS")
+                print("=" * 60)
+                
+                run_analyzer = RunAnalyzer(run_dir, config)
+                run_analyzer.run_full_analysis()
         else:
             print("\nSkipping post-processing (--record-only flag set)")
             if isinstance(session_dirs, list):

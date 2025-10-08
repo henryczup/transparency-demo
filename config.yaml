@@ -63,3 +63,34 @@ postprocessing:
   frame_format: "jpg"
   generate_metadata: true
   frame_extraction_step: 1
+
+# Transparency Analysis Configuration
+transparency_analysis:
+  enabled: true  # Enable transparency analysis
+  roi_selection_mode: "interactive"  # "interactive" or "config"
+  
+  # ROI coordinates (used when roi_selection_mode is "config")
+  roi_coordinates:
+    x: 500
+    y: 400
+    width: 200
+    height: 200
+  
+  # Baseline calculation (frames before GPIO trigger)
+  baseline_frames: 0  # Number of initial frames to average for baseline
+  
+  # Visualization options
+  visualization:
+    create_plots: true  # Generate transparency plots
+    annotate_frames: true  # Create before/after comparison images
+    plot_gpio_trigger_line: true  # Show GPIO trigger time on plots
+
+# Run-Level Analysis Configuration
+run_analysis:
+  # Image averaging settings
+  averaged_image:
+    frame_offset_from_end: 0  # Which frame to use (0 = last frame, 1 = second-to-last, etc.)
+    # Examples:
+    #   0 = Use the very last frame from each session
+    #   5 = Use the frame 5 frames before the end
+    #   10 = Use the frame 10 frames before the end
