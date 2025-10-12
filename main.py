@@ -1,12 +1,12 @@
 """
-Main entry point for synchronized OAK-D camera and FT232H GPIO recording
+Main entry point for synchronized camera and FT232H GPIO recording
 """
 import yaml
 import argparse
 from pathlib import Path
 from src.synchronized_recorder import SynchronizedRecorder
 from src.postprocessor import DataPostProcessor
-from src.run_analyzer import RunAnalyzer
+from src.batch_analyzer import BatchAnalyzer
 
 
 def load_config(config_path="config.yaml"):
@@ -18,7 +18,7 @@ def load_config(config_path="config.yaml"):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Synchronized OAK-D Camera and FT232H GPIO Recording System"
+        description="Synchronized Camera and FT232H GPIO Recording System"
     )
     parser.add_argument(
         '--config',
@@ -34,8 +34,8 @@ def main():
     parser.add_argument(
         '--process-only',
         type=str,
-        metavar='SESSION_DIR',
-        help='Only post-process existing session (provide session directory path)'
+        metavar='RECORDING_DIR',
+        help='Only post-process existing recording (provide recording directory path)'
     )
     
     args = parser.parse_args()
@@ -45,7 +45,7 @@ def main():
     
     if args.process_only:
         # Post-process only mode
-        print(f"Post-processing session: {args.process_only}")
+        print(f"Post-processing recording: {args.process_only}")
         processor = DataPostProcessor(args.process_only, config)
         processor.process_all()
     else:
@@ -55,7 +55,12 @@ def main():
         print("=" * 60)
         print(f"Configuration loaded from: {args.config}")
         print(f"Recording duration: {config['recording']['duration_seconds']} seconds")
-        print(f"Camera: {config['camera']['resolution']} @ {config['camera']['fps']} FPS")
+        
+        # Display camera info
+        camera_type = config['camera'].get('type', 'oakd').upper()
+        camera_res = config['camera'].get('resolution', '1080p')
+        camera_fps = config['camera'].get('fps', 30)
+        print(f"Camera: {camera_type} - {camera_res} @ {camera_fps} FPS")
         
         # Determine pin label based on mode
         pin_label = "D" if config['gpio'].get('use_adbus', False) else "C"
@@ -64,7 +69,7 @@ def main():
         
         # Record
         recorder = SynchronizedRecorder(config)
-        session_dirs = recorder.record()
+        recording_dirs = recorder.record()
         
         # Post-process if not disabled
         if not args.record_only:
@@ -72,34 +77,34 @@ def main():
             print("STARTING POST-PROCESSING")
             print("=" * 60)
             
-            # Handle both single session (string) and multiple sessions (list)
-            if isinstance(session_dirs, str):
-                session_dirs = [session_dirs]
+            # Handle both single recording (string) and multiple recordings (list)
+            if isinstance(recording_dirs, str):
+                recording_dirs = [recording_dirs]
             
-            for i, session_dir in enumerate(session_dirs, 1):
-                print(f"\nPost-processing session {i} of {len(session_dirs)}...")
-                processor = DataPostProcessor(session_dir, config)
+            for i, recording_dir in enumerate(recording_dirs, 1):
+                print(f"\nPost-processing recording {i} of {len(recording_dirs)}...")
+                processor = DataPostProcessor(recording_dir, config)
                 processor.process_all()
             
-            # Run-level analysis if multiple sessions
-            if len(session_dirs) > 1:
-                # Get run directory from first session
-                run_dir = Path(session_dirs[0]).parent
+            # Batch-level analysis if multiple recordings
+            if len(recording_dirs) > 1:
+                # Get batch directory from first recording
+                batch_dir = Path(recording_dirs[0]).parent
                 
                 print("\n" + "=" * 60)
-                print("STARTING RUN-LEVEL ANALYSIS")
+                print("STARTING BATCH-LEVEL ANALYSIS")
                 print("=" * 60)
                 
-                run_analyzer = RunAnalyzer(run_dir, config)
-                run_analyzer.run_full_analysis()
+                batch_analyzer = BatchAnalyzer(batch_dir, config)
+                batch_analyzer.run_full_analysis()
         else:
             print("\nSkipping post-processing (--record-only flag set)")
-            if isinstance(session_dirs, list):
+            if isinstance(recording_dirs, list):
                 print("To process later, run:")
-                for session_dir in session_dirs:
-                    print(f"  python main.py --process-only {session_dir}")
+                for recording_dir in recording_dirs:
+                    print(f"  python main.py --process-only {recording_dir}")
             else:
-                print(f"To process later, run: python main.py --process-only {session_dirs}")
+                print(f"To process later, run: python main.py --process-only {recording_dirs}")
     
     print("\n✓ All operations complete!")
 

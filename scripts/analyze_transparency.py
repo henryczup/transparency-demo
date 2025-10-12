@@ -4,8 +4,13 @@ Standalone script to run transparency analysis on existing recording sessions
 import argparse
 import yaml
 from pathlib import Path
-from src.transparency_analyzer import TransparencyAnalyzer
 import json
+import sys
+
+# Add parent directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from src.transparency_analyzer import TransparencyAnalyzer
 
 
 def load_config(config_path):

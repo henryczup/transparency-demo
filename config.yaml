@@ -1,96 +1,112 @@
-# # Recording Configuration
-# recording:
-#   duration_seconds: 10  # Duration of each recording session
-#   output_directory: "./recordings"  # Where to save recorded data
-  
-#   # Multi-session configuration
-#   num_sessions: 1  # Number of recording sessions to perform (1 = single recording)
-#   interval_seconds: 20  # Time between sessions (GPIO OFF period)
-#   startup_wait_seconds: 5  # Wait time before first recording starts (camera warmup)
-  
-# # Camera Configuration
-# camera:
-#   resolution: "1080p"  # Options: 1080p, 4k, 720p
-#   fps: 30  # Frames per second
-#   enable_depth: false  # Set to true to also record depth data
-#   color_order: "BGR"  # BGR or RGB
-  
-# # GPIO Configuration
-# gpio:
-#   ft232h_url: "ftdi://ftdi:232h/1"  # FT232H device URL
-#   trigger_pin: 0  # GPIO pin number (D0-D7, outputs 3.3V)
-#   signal_high_duration: 0.1  # How long to keep signal HIGH in seconds
-#   signal_mode: "continuous"  # "pulse" or "continuous" (continuous keeps signal HIGH for entire recording)
-#   use_adbus: true  # Use D pins (ADBUS) for 3.3V output instead of C pins (ACBUS)
-  
-# # Post-processing Configuration
-# postprocessing:
-#   extract_frames: true  # Extract individual frames
-#   frame_format: "jpg"  # jpg or png
-#   generate_metadata: true  # Generate CSV with frame timestamps
-#   frame_extraction_step: 1  # Extract every Nth frame (1 = all frames)
-
-# Multi-Session Recording Configuration Example
-# This config runs multiple recording sessions with intervals between them
+# =============================================================================
+# UNIFIED CONFIGURATION FILE
+# =============================================================================
+# This single config file supports both OAK-D and IR cameras
+# Simply change the camera.type parameter to switch between them
+# =============================================================================
 
 recording:
-  duration_seconds: 10  # Each recording lasts 10 seconds (GPIO ON)
+  duration_seconds: 10  # Each recording lasts 60 seconds (GPIO ON)
   output_directory: "./recordings"
   
-  # Multi-session settings
-  num_sessions: 5  # Perform 5 recording sessions
-  interval_seconds: 20  # Wait 20 seconds between sessions (GPIO OFF)
-  startup_wait_seconds: 0  # Wait 5 seconds before first recording (camera warmup)
+  # Multi-recording settings (batch mode)
+  num_recordings: 3  # Number of recordings in this batch
+  interval_seconds: 10 # Wait 180 seconds between recordings (GPIO OFF)
+  startup_wait_seconds: 5 # Wait before first recording (camera warmup)
 
-# Camera Configuration
+# =============================================================================
+# CAMERA CONFIGURATION
+# =============================================================================
+# Switch between camera types by changing the "type" parameter below
+# =============================================================================
+
 camera:
-  resolution: "1080p"  # Options: 1080p, 4k, 720p
+  # -------------------------------------------------------------------------
+  # CAMERA TYPE SELECTION
+  # -------------------------------------------------------------------------
+  type: "ir"  # Options: "oakd" or "ir"
+  #   - "oakd" = OAK-D depth camera (high quality, USB 3.0)
+  #   - "ir"   = IR camera via OpenCV (flexible, any USB camera)
+  
+  # -------------------------------------------------------------------------
+  # COMMON SETTINGS (used by both camera types)
+  # -------------------------------------------------------------------------
+  resolution: "480p"  # Options: "1080p", "4k", "720p", "480p"
   fps: 30  # Frames per second
+  
+  # -------------------------------------------------------------------------
+  # OAK-D SPECIFIC SETTINGS (only used when type: "oakd")
+  # -------------------------------------------------------------------------
+  # Manual exposure settings (disable auto-exposure for consistent brightness)
+  manual_exposure: false  # Set to true to lock exposure
+  exposure_time_us: 40000  # Exposure time in microseconds (20000 = 20ms)
+  iso: 100  # ISO sensitivity (100-1600)
+  
+  # Manual white balance (disable auto-white balance for consistent colors)
+  manual_white_balance: false  # Set to true to lock white balance
+  white_balance_temp: 5000  # Color temperature in Kelvin (2000-10000)
   enable_depth: false
   color_order: "BGR"
+  
+  # -------------------------------------------------------------------------
+  # IR CAMERA SPECIFIC SETTINGS (only used when type: "ir")
+  # -------------------------------------------------------------------------
+  camera_index: 0  # Specific camera index to use (try 0, 1, 2, etc.)
+  probe_indices: [0, 1, 2, 3, 4]  # List of indices to try if camera_index fails
+  # backend: null  # Optional: OpenCV backend (e.g., cv2.CAP_DSHOW for Windows)
 
-# GPIO Configuration
+# =============================================================================
+# GPIO CONFIGURATION
+# =============================================================================
+
 gpio:
-  ft232h_url: "ftdi://ftdi:232h/1"
+  ft232h_url: "ftdi://ftdi:232h/1"  # FT232H device URL
   trigger_pin: 0  # D0 pin
   signal_high_duration: 0.1
   signal_mode: "continuous"  # GPIO HIGH during recording, LOW during intervals
   use_adbus: true  # Use D pins for 3.3V output
 
-# Post-processing Configuration
+# =============================================================================
+# POST-PROCESSING CONFIGURATION
+# =============================================================================
+# Calculates difference frames (end - start) for each recording
+# Then averages all difference frames across the batch
+# =============================================================================
+
 postprocessing:
-  extract_frames: true
-  frame_format: "jpg"
-  generate_metadata: true
-  frame_extraction_step: 1
+  enabled: true  # Enable post-processing
+  
+  # Frame offsets to exclude startup/cooldown artifacts
+  start_frame_offset: 30  # Skip first N frames (camera startup artifacts)
+  end_frame_offset: 30    # Skip last N frames (camera cooldown artifacts)
+  # Example: With 300 total frames, offsets of 30 each means:
+  #   - Start frame: frame 30 (skip first 30)
+  #   - End frame: frame 269 (skip last 30)
+  #   - Frames analyzed: 240 frames of clean data
 
-# Transparency Analysis Configuration
-transparency_analysis:
-  enabled: true  # Enable transparency analysis
-  roi_selection_mode: "interactive"  # "interactive" or "config"
-  
-  # ROI coordinates (used when roi_selection_mode is "config")
-  roi_coordinates:
-    x: 500
-    y: 400
-    width: 200
-    height: 200
-  
-  # Baseline calculation (frames before GPIO trigger)
-  baseline_frames: 0  # Number of initial frames to average for baseline
-  
-  # Visualization options
-  visualization:
-    create_plots: true  # Generate transparency plots
-    annotate_frames: true  # Create before/after comparison images
-    plot_gpio_trigger_line: true  # Show GPIO trigger time on plots
-
-# Run-Level Analysis Configuration
-run_analysis:
-  # Image averaging settings
-  averaged_image:
-    frame_offset_from_end: 0  # Which frame to use (0 = last frame, 1 = second-to-last, etc.)
-    # Examples:
-    #   0 = Use the very last frame from each session
-    #   5 = Use the frame 5 frames before the end
-    #   10 = Use the frame 10 frames before the end
+# =============================================================================
+# QUICK START EXAMPLES
+# =============================================================================
+#
+# Example 1: Use IR Camera with single recording
+#   camera:
+#     type: "ir"
+#     camera_index: 0
+#   recording:
+#     num_recordings: 1
+#
+# Example 2: Use OAK-D Camera with batch of 5 recordings
+#   camera:
+#     type: "oakd"
+#     resolution: "1080p"
+#   recording:
+#     num_recordings: 5
+#     interval_seconds: 120
+#
+# Example 3: Quick test (30 second recording, no GPIO)
+#   recording:
+#     duration_seconds: 30
+#     num_recordings: 1
+#     startup_wait_seconds: 0
+#
+# =============================================================================

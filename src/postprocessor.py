@@ -1,212 +1,145 @@
 """
 Post-processing module for recorded data
+Calculates difference frames (end - start) for each recording
 """
 import cv2
 import json
-import pandas as pd
 import numpy as np
 from pathlib import Path
-import shutil
-from .transparency_analyzer import TransparencyAnalyzer
 
 
 class DataPostProcessor:
-    """Post-processes recorded video and metadata"""
+    """Post-processes recorded video to extract difference frames"""
     
-    def __init__(self, session_dir, config):
-        self.session_dir = Path(session_dir)
+    def __init__(self, recording_dir, config):
+        self.recording_dir = Path(recording_dir)
         self.config = config
         self.metadata = None
         
         # Load metadata
-        metadata_path = self.session_dir / "metadata.json"
+        metadata_path = self.recording_dir / "metadata.json"
         if metadata_path.exists():
             with open(metadata_path, 'r') as f:
                 self.metadata = json.load(f)
         else:
             print(f"Warning: No metadata found at {metadata_path}")
     
-    def extract_frames(self):
-        """Extract individual frames from video"""
-        if not self.config['postprocessing']['extract_frames']:
-            print("Frame extraction disabled in config")
-            return
-        
-        video_path = self.session_dir / "recording.mp4"
+    def calculate_difference_frame(self):
+        """
+        Calculate difference between end frame and start frame with configurable offsets
+        Returns: difference_frame (end - start)
+        """
+        video_path = self.recording_dir / "recording.mp4"
         if not video_path.exists():
             print(f"Video file not found: {video_path}")
-            return
+            return None
         
-        # Create frames directory
-        frames_dir = self.session_dir / "frames"
-        frames_dir.mkdir(exist_ok=True)
-        
-        print(f"\nExtracting frames from video...")
+        print(f"\nCalculating difference frame for {self.recording_dir.name}...")
         cap = cv2.VideoCapture(str(video_path))
         
-        frame_idx = 0
-        extracted_count = 0
-        step = self.config['postprocessing']['frame_extraction_step']
-        frame_format = self.config['postprocessing']['frame_format']
+        # Get total frame count
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                break
-            
-            # Extract every Nth frame
-            if frame_idx % step == 0:
-                frame_path = frames_dir / f"frame_{frame_idx:06d}.{frame_format}"
-                cv2.imwrite(str(frame_path), frame)
-                extracted_count += 1
-            
-            frame_idx += 1
+        if total_frames < 2:
+            print(f"Not enough frames ({total_frames}) to calculate difference")
+            cap.release()
+            return None
+        
+        # Get frame offsets from config (default to 0 if not specified)
+        postproc_config = self.config.get('postprocessing', {})
+        start_offset = postproc_config.get('start_frame_offset', 0)
+        end_offset = postproc_config.get('end_frame_offset', 0)
+        
+        # Calculate actual frame indices
+        start_frame_idx = start_offset
+        end_frame_idx = total_frames - 1 - end_offset
+        
+        # Validate indices
+        if start_frame_idx >= end_frame_idx:
+            print(f"Error: Invalid frame offsets. Start offset ({start_offset}) + end offset ({end_offset}) exceed total frames ({total_frames})")
+            cap.release()
+            return None
+        
+        if start_frame_idx < 0 or end_frame_idx >= total_frames:
+            print(f"Error: Frame indices out of bounds")
+            cap.release()
+            return None
+        
+        # Read start frame (with offset)
+        cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame_idx)
+        ret, start_frame = cap.read()
+        
+        if not ret:
+            print(f"Could not read start frame at index {start_frame_idx}")
+            cap.release()
+            return None
+        
+        # Read end frame (with offset)
+        cap.set(cv2.CAP_PROP_POS_FRAMES, end_frame_idx)
+        ret, end_frame = cap.read()
+        
+        if not ret:
+            print(f"Could not read end frame at index {end_frame_idx}")
+            cap.release()
+            return None
         
         cap.release()
-        print(f"Extracted {extracted_count} frames to {frames_dir}")
-    
-    def generate_frame_metadata(self):
-        """Generate CSV with detailed frame information"""
-        if not self.config['postprocessing']['generate_metadata']:
-            print("Metadata generation disabled in config")
-            return
         
-        if not self.metadata:
-            print("No metadata available")
-            return
+        # Convert to float for proper subtraction
+        start_float = start_frame.astype(np.float32)
+        end_float = end_frame.astype(np.float32)
         
-        print("\nGenerating frame metadata CSV...")
+        # Calculate difference: end - start
+        difference = end_float - start_float
         
-        # Extract frame data
-        timestamps = self.metadata.get('frame_timestamps', [])
-        frame_count = self.metadata['session_info']['frame_count']
+        # Save individual frames for reference
+        frames_dir = self.recording_dir / "frames"
+        frames_dir.mkdir(exist_ok=True)
         
-        # Create DataFrame
-        data = {
-            'frame_number': list(range(frame_count)),
-            'timestamp_relative_sec': timestamps,
-            'timestamp_relative_ms': [ts * 1000 for ts in timestamps],
+        cv2.imwrite(str(frames_dir / "start_frame.png"), start_frame)
+        cv2.imwrite(str(frames_dir / "end_frame.png"), end_frame)
+        
+        # Save raw difference (can have negative values)
+        difference_path = self.recording_dir / "difference_frame_raw.npy"
+        np.save(str(difference_path), difference)
+        
+        # Save visualizable difference (shifted and scaled)
+        # Shift by 127 to center at gray, then clip to 0-255
+        difference_vis = np.clip(difference + 127, 0, 255).astype(np.uint8)
+        cv2.imwrite(str(frames_dir / "difference_frame_visualized.png"), difference_vis)
+        
+        # Save absolute difference for easier viewing
+        difference_abs = np.abs(difference).astype(np.uint8)
+        cv2.imwrite(str(frames_dir / "difference_frame_absolute.png"), difference_abs)
+        
+        print(f"✓ Difference frame calculated")
+        print(f"  Total frames in video: {total_frames}")
+        print(f"  Start frame: {start_frame_idx} (offset: {start_offset})")
+        print(f"  End frame: {end_frame_idx} (offset: {end_offset})")
+        print(f"  Frames analyzed: {end_frame_idx - start_frame_idx + 1}")
+        print(f"  Difference range: [{difference.min():.1f}, {difference.max():.1f}]")
+        
+        # Save metadata about the difference calculation
+        diff_metadata = {
+            'start_frame_index': int(start_frame_idx),
+            'end_frame_index': int(end_frame_idx),
+            'start_frame_offset': int(start_offset),
+            'end_frame_offset': int(end_offset),
+            'total_frames': total_frames,
+            'frames_analyzed': int(end_frame_idx - start_frame_idx + 1),
+            'difference_stats': {
+                'min': float(difference.min()),
+                'max': float(difference.max()),
+                'mean': float(difference.mean()),
+                'std': float(difference.std())
+            }
         }
         
-        # Add GPIO sync information
-        sync_info = self.metadata.get('synchronization', {})
-        if sync_info.get('gpio_trigger_time'):
-            gpio_trigger_relative = sync_info['gpio_trigger_time'] - sync_info['camera_start_time']
-            data['time_from_gpio_trigger_ms'] = [(ts - gpio_trigger_relative) * 1000 for ts in timestamps]
+        metadata_path = self.recording_dir / "difference_metadata.json"
+        with open(metadata_path, 'w') as f:
+            json.dump(diff_metadata, f, indent=2)
         
-        df = pd.DataFrame(data)
-        
-        # Save CSV
-        csv_path = self.session_dir / "frame_metadata.csv"
-        df.to_csv(csv_path, index=False)
-        print(f"Frame metadata saved: {csv_path}")
-        
-        # Print summary statistics
-        print("\n=== Frame Metadata Summary ===")
-        print(f"Total frames: {len(df)}")
-        if len(df) > 1:
-            fps_actual = 1.0 / df['timestamp_relative_sec'].diff().mean()
-            print(f"Actual average FPS: {fps_actual:.2f}")
-            print(f"Frame time std dev: {df['timestamp_relative_sec'].diff().std() * 1000:.3f} ms")
-    
-    def analyze_synchronization(self):
-        """Analyze and report on synchronization quality"""
-        if not self.metadata:
-            print("No metadata available for sync analysis")
-            return
-        
-        print("\n=== Synchronization Analysis ===")
-        
-        sync_info = self.metadata.get('synchronization', {})
-        
-        if sync_info.get('sync_offset_ms') is not None:
-            offset = sync_info['sync_offset_ms']
-            print(f"Camera-GPIO sync offset: {offset:.3f} ms")
-            
-            if abs(offset) < 1.0:
-                print("✓ Excellent synchronization (< 1ms)")
-            elif abs(offset) < 5.0:
-                print("✓ Good synchronization (< 5ms)")
-            elif abs(offset) < 10.0:
-                print("⚠ Acceptable synchronization (< 10ms)")
-            else:
-                print("⚠ Poor synchronization (> 10ms) - consider optimization")
-        else:
-            print("GPIO timing not available")
-        
-        # Frame timing consistency
-        timestamps = self.metadata.get('frame_timestamps', [])
-        if len(timestamps) > 1:
-            diffs = np.diff(timestamps)
-            print(f"\nFrame timing consistency:")
-            print(f"  Mean interval: {np.mean(diffs) * 1000:.3f} ms")
-            print(f"  Std deviation: {np.std(diffs) * 1000:.3f} ms")
-            print(f"  Min interval: {np.min(diffs) * 1000:.3f} ms")
-            print(f"  Max interval: {np.max(diffs) * 1000:.3f} ms")
-    
-    def create_summary_report(self):
-        """Create a comprehensive summary report"""
-        if not self.metadata:
-            print("No metadata available for summary")
-            return
-        
-        report_path = self.session_dir / "summary_report.txt"
-        
-        with open(report_path, 'w') as f:
-            f.write("=" * 60 + "\n")
-            f.write("RECORDING SESSION SUMMARY REPORT\n")
-            f.write("=" * 60 + "\n\n")
-            
-            # Session info
-            session = self.metadata['session_info']
-            f.write("SESSION INFORMATION:\n")
-            f.write(f"  Start Time: {session['start_time']}\n")
-            f.write(f"  End Time: {session['end_time']}\n")
-            f.write(f"  Duration: {session['duration_seconds']:.3f} seconds\n")
-            f.write(f"  Total Frames: {session['frame_count']}\n")
-            f.write(f"  Average FPS: {session['frame_count'] / session['duration_seconds']:.2f}\n\n")
-            
-            # Camera config
-            cam = self.metadata['camera_config']
-            f.write("CAMERA CONFIGURATION:\n")
-            f.write(f"  Resolution: {cam['resolution']}\n")
-            f.write(f"  Target FPS: {cam['fps']}\n")
-            f.write(f"  Color Order: {cam['color_order']}\n")
-            f.write(f"  Depth Enabled: {cam.get('enable_depth', False)}\n\n")
-            
-            # GPIO config
-            gpio = self.metadata['gpio_config']
-            f.write("GPIO CONFIGURATION:\n")
-            f.write(f"  Trigger Pin: C{gpio['trigger_pin']}\n")
-            f.write(f"  Signal Mode: {gpio['signal_mode']}\n")
-            f.write(f"  Signal Duration: {gpio['signal_high_duration']}s\n\n")
-            
-            # Synchronization
-            sync = self.metadata.get('synchronization', {})
-            f.write("SYNCHRONIZATION:\n")
-            if sync.get('sync_offset_ms') is not None:
-                f.write(f"  Sync Offset: {sync['sync_offset_ms']:.3f} ms\n")
-            else:
-                f.write("  GPIO timing not available\n")
-            
-            f.write("\n" + "=" * 60 + "\n")
-        
-        print(f"Summary report saved: {report_path}")
-    
-    def run_transparency_analysis(self):
-        """Run transparency analysis if enabled"""
-        if not self.config.get('transparency_analysis', {}).get('enabled', False):
-            print("\nTransparency analysis disabled in config")
-            return
-        
-        # Determine run directory (parent of session directory)
-        run_dir = self.session_dir.parent if self.session_dir.parent.name.startswith('run_') else None
-        
-        # Create analyzer with run_dir for shared ROI
-        analyzer = TransparencyAnalyzer(self.session_dir, self.config, self.metadata, run_dir)
-        
-        # Run full analysis
-        analyzer.run_full_analysis()
+        return difference
     
     def process_all(self):
         """Run all post-processing steps"""
@@ -214,11 +147,19 @@ class DataPostProcessor:
         print("STARTING POST-PROCESSING")
         print("=" * 60)
         
-        self.extract_frames()
-        self.generate_frame_metadata()
-        self.analyze_synchronization()
-        self.create_summary_report()
-        self.run_transparency_analysis()
+        difference_frame = self.calculate_difference_frame()
+        
+        if difference_frame is not None:
+            print("\n✓ Post-processing complete")
+            print(f"  Files saved in: {self.recording_dir}")
+            print("  - frames/start_frame.png")
+            print("  - frames/end_frame.png")
+            print("  - frames/difference_frame_visualized.png")
+            print("  - frames/difference_frame_absolute.png")
+            print("  - difference_frame_raw.npy")
+            print("  - difference_metadata.json")
+        else:
+            print("\n✗ Post-processing failed")
         
         print("\n" + "=" * 60)
         print("POST-PROCESSING COMPLETE")
